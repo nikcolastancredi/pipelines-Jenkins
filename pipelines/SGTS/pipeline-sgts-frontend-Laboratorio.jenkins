@@ -1,0 +1,60 @@
+    pipeline{
+        agent { label 'jump' }
+        
+        stages{
+    
+            stage('Artifacts Delivery to UAT'){
+                steps{
+                sh 'cp -R   /opt/conf/catalogaciones/catalogaciones/TEST/GeneXusTeam/SGTS/UAT/Deploys/* /opt/websrvr/workspace/pipeline-sgts-frontend-Laboratorio'
+                sshPublisher(publishers: [sshPublisherDesc(configName: 'lkcvap1031', transfers: [sshTransfer(cleanRemote: true, excludes: '', execCommand: '', execTimeout: 120000, flatten: false, makeEmptyDirs: false, noDefaultExcludes: false, patternSeparator: '[, ]+', remoteDirectory: '', remoteDirectorySDF: false, removePrefix: '', sourceFiles: '*/**')], usePromotionTimestamp: false, useWorkspaceInPromotion: false, verbose: false)])
+                    }
+            }
+    
+    
+            stage('Deploy UAT') {     
+                steps {
+                    script {
+                        def remote = [:]
+                        remote.name = 'uat'
+                        remote.host = 'lkcvap1031.1dc.com'
+                        remote.allowAnyHosts = true
+    					
+    					withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'sshUser', usernameVariable: 'userName', passwordVariable: 'password']]) {
+    						remote.user = userName
+    						remote.password = password
+    
+    				}
+    					
+    
+                        //MOVIMIENTO DE ARCHIVOS GAM
+                        writeFile file: 'move_files_gam.sh', text: "cp -R /tmp/to_implement/En_Carpeta_gam/* /appserver/aplicaciones/sgts/gam/"
+                        sshScript remote: remote, script: "move_files_gam.sh"
+
+
+                        //MOVIMIENTO DE ARCHIVOS XSLS
+                        writeFile file: 'move_files_xsls.sh', text: "cp -R /tmp/to_implement/EnDirectorio_xsls/* /appserver/aplicaciones/sgts/xsls/"
+                        sshScript remote: remote, script: "move_files_xsls.sh"
+
+
+      
+    
+                        //ETAPA DE DEPLOPY                  
+                        writeFile file: 'deploy.cli', text: "connect \n deploy -f /tmp/to_implement/sgts.war"
+                        sshPut remote: remote, from: 'deploy.cli', into: '/tmp/to_implement'
+    
+                        
+                        writeFile file: 'ejecusionDeploy.sh', text:"sh /appserver/wildfly/bin/jboss-cli.sh --controller=127.0.0.1 -c --file=/tmp/to_implement/deploy.cli"
+                        sshScript remote: remote, script: "ejecusionDeploy.sh"
+                        
+                        
+                        //ETAPA DE CLEAN ARTEFACTOS_ JUMP 
+                        sh 'sudo  /usr/bin/rm -rf   /opt/conf/catalogaciones/catalogaciones/TEST/GeneXusTeam/SGTS/UAT/Deploys/*'
+
+
+                       
+                }
+            }
+        }
+       
+    }
+}

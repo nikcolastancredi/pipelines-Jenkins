@@ -1,0 +1,119 @@
+pipeline{
+    agent { label 'jump' }
+
+    environment {
+        Deploy = "/opt/conf/catalogaciones/catalogaciones/TEST/GeneXusTeam/ONBOARDING/Dev/Deploys/*"
+        Fromgam = "/tmp/to_implement/En_Carpeta_gam/*"
+        Fromxsls = "/tmp/to_implement/EnDirectorio_xsls/*"
+        Destgam = "/appserver/aplicaciones/onboarding/gam/"
+        Destxsls = "/appserver/aplicaciones/onboarding/xsls/"
+    }
+
+        
+    stages{
+        stage('Artifacts Delivery to DEV'){
+            steps{
+                sh "cp -pR ${env.Deploy} ${env.WORKSPACE}"
+                sshPublisher(publishers: [sshPublisherDesc(configName: 'lkdvap1043', transfers: [sshTransfer(cleanRemote: true, excludes: '', execCommand: '', execTimeout: 120000, flatten: false, makeEmptyDirs: false, noDefaultExcludes: false, patternSeparator: '[, ]+', remoteDirectory: '', remoteDirectorySDF: false, removePrefix: '', sourceFiles: '*/**')], usePromotionTimestamp: false, useWorkspaceInPromotion: false, verbose: false)])
+
+            }
+        }
+    
+    
+         stage("Copy to Files"){
+             parallel{
+                 stage("ARCHIVOS GAM"){
+                     steps{
+                         script {
+                             def remote = [:]
+                             remote.name = 'DEV'
+                             remote.host = 'lkdvap1043.1dc.com'
+                             remote.allowAnyHosts = true
+    				
+    	 			        withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'sshUser', usernameVariable: 'userName', passwordVariable: 'password']]) {
+    	 				        remote.user = userName
+    	 				        remote.password = password
+    
+    	 			        }
+
+                             //MOVIMIENTO DE ARCHIVOS GAM
+                             writeFile file: 'moveFilesGam.sh', text: "#!/bin/sh \n cp -pR ${env.Fromgam} ${env.Destgam}  \n exit 0"
+                             sshScript remote: remote, script: "moveFilesGam.sh"
+                         }
+                     }
+
+                 } 
+                
+                 stage("ARCHIVOS XSLS"){
+                     steps{
+                         script {
+                             def remote = [:]
+                             remote.name = 'DEV'
+                             remote.host = 'lkdvap1043.1dc.com'
+                             remote.allowAnyHosts = true
+    				
+    	 			        withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'sshUser', usernameVariable: 'userName', passwordVariable: 'password']]) {
+    	 				        remote.user = userName
+    	 				        remote.password = password
+    
+    	 			        }
+
+                             //MOVIMIENTO DE ARCHIVOS XSLS
+                             writeFile file: 'moveFilesXSLS.sh', text: "#!/bin/sh \n cp -pR ${env.Fromxsls} ${env.Destxsls} \n exit 0"
+                             sshScript remote: remote, script: "moveFilesXSLS.sh"
+                        
+                         }
+                     }
+                 }
+
+
+             }
+         }
+        
+        stage('Deploy DEV'){     
+            steps{
+                script{
+                    def remote = [:]
+                    remote.name = 'dev'
+                    remote.host = 'lkdvap1043.1dc.com'
+                    remote.allowAnyHosts = true
+    				
+    				withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'sshUser', usernameVariable: 'userName', passwordVariable: 'password']]) {
+    					remote.user = userName
+    					remote.password = password
+    
+    				}
+
+                    //ETAPA DE DEPLOPY ONBOARDING.WAR                
+                    writeFile file: 'deployOnboarding.cli', text: "connect \n deploy -f /tmp/to_implement/onboarding.war"
+                    sshPut remote: remote, from: 'deployOnboarding.cli', into: '/tmp/to_implement'
+                    writeFile file: 'deployOnboarding.sh', text:"/appserver/wildfly/bin/jboss-cli.sh  --file=/tmp/to_implement/deployOnboarding.cli"
+                    sshScript remote: remote, script: "deployOnboarding.sh"
+                        
+                    //ETAPA DE DEPLOPY ONBOARDINSERVICES.WAR                
+                    writeFile file: 'deployOnboardingServices.cli', text: "connect \n deploy -f /tmp/to_implement/onboardingservices.war"
+                    sshPut remote: remote, from: 'deployOnboardingServices.cli', into: '/tmp/to_implement'                        
+                    writeFile file: 'deployOnboardingServices.sh', text:"/appserver/wildfly/bin/jboss-cli.sh  --file=/tmp/to_implement/deployOnboardingServices.cli"
+                    sshScript remote: remote, script: "deployOnboardingServices.sh"
+                        
+                        
+                    //ETAPA DE CLEAN ARTEFACTOS_JUMP 
+                    sh "sudo  /usr/bin/rm -rf  ${env.Deploy}"
+
+                    
+                    //URL DE PRUEBA
+                    //onboarding: 10.98.18.182:8080/onboarding/rest/checkstatus?Level=FULL
+                    //onboardingservices: 10.98.18.182:8080/onboardingservices/rest/checkstatus?Level=FULL
+
+                       
+                }
+            }
+        }
+
+
+       
+
+
+       
+    }
+}
